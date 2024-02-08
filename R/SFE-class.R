@@ -86,10 +86,9 @@ setClass("SpatialFeatureExperiment", contains = "SpatialExperiment")
 #'   diameter must be in the same unit as the coordinates in the *Geometry
 #'   arguments. Ignored for geometries that are not POINT or MULTIPOINT.
 #' @param unit Unit the coordinates are in, either microns or pixels in full
-#' resolution image.
-#' @param BPPARAM An optional \code{\link[BiocParallel]{BiocParallelParam}}
-#'   instance, passed to \code{\link{df2sf}} to parallelize the conversion of
-#'   data frames with coordinates to \code{sf} geometries.
+#'   resolution image.
+#' @param BPPARAM Deprecated. The `sfheaders` package is used in
+#'   \code{\link{df2sf}} for much better performance.
 #' @param ... Additional arguments passed to the \code{\link{SpatialExperiment}}
 #'   and \code{\link{SingleCellExperiment}} constructors.
 #' @return A SFE object. If neither \code{colGeometries} nor \code{spotDiameter}
@@ -144,8 +143,12 @@ SpatialFeatureExperiment <- function(assays,
                                      annotGeometryType = "POLYGON",
                                      spatialGraphs = NULL,
                                      unit = c("full_res_image_pixel", "micron"),
-                                     BPPARAM = SerialParam(),
+                                     BPPARAM = deprecated(),
                                      ...) {
+    if (is_present(BPPARAM)) {
+        deprecate_warn("1.6.0", "SpatialFeatureExperiment(BPPARAM = )",
+                       details = "The sfheaders package is now used in df2sf() for much better performance")
+    }
     if (!length(colData)) {
         colData <- make_zero_col_DFrame(nrow = ncol(assays[[1]]))
     }
@@ -181,7 +184,7 @@ SpatialFeatureExperiment <- function(assays,
     sfe <- .spe_to_sfe(
         spe, colGeometries, rowGeometries, annotGeometries,
         spatialCoordsNames, annotGeometryType,
-        spatialGraphs, spotDiameter, unit, BPPARAM
+        spatialGraphs, spotDiameter, unit
     )
     return(sfe)
 }
@@ -189,21 +192,21 @@ SpatialFeatureExperiment <- function(assays,
 #' @importFrom grDevices col2rgb
 .spe_to_sfe <- function(spe, colGeometries, rowGeometries, annotGeometries,
                         spatialCoordsNames, annotGeometryType, spatialGraphs,
-                        spotDiameter, unit, BPPARAM) {
+                        spotDiameter, unit) {
     if (is.null(colGeometries)) {
       cg_name <- if (is.na(spotDiameter)) "centroids" else "spotPoly"
-      colGeometries <- list(foo = .sc2cg(spatialCoords(spe), spotDiameter, BPPARAM))
+      colGeometries <- list(foo = .sc2cg(spatialCoords(spe), spotDiameter))
       names(colGeometries) <- cg_name
     }
     if (!is.null(rowGeometries)) {
         rowGeometries <- .df2sf_list(rowGeometries, spatialCoordsNames,
-            spotDiameter = NA, geometryType = "POLYGON", BPPARAM = BPPARAM
+            spotDiameter = NA, geometryType = "POLYGON"
         )
     }
     if (!is.null(annotGeometries)) {
         annotGeometries <- .df2sf_list(annotGeometries, spatialCoordsNames,
             spotDiameter = NA,
-            geometryType = annotGeometryType, BPPARAM = BPPARAM
+            geometryType = annotGeometryType
         )
     }
     if (nrow(imgData(spe))) {

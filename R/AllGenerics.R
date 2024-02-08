@@ -226,4 +226,16 @@ setGeneric("unit", function(x) standardGeneric("unit"))
 #' @export
 setGeneric("transposeImg", function(x, ...) standardGeneric("transposeImg"))
 
+#' @export
+setGeneric("cropImg", function(x, bbox, ...) standardGeneric("cropImg"))
+
 if (!isGeneric("saveRDS")) {setGeneric("saveRDS", function (object, file="", ascii=FALSE, version=NULL, compress=TRUE, refhook=NULL) standardGeneric("saveRDS"))}
+
+#' @export
+setGeneric("toEBImage", function(x, ...) standardGeneric("toEBImage"))
+
+#' @export
+setGeneric("toSpatRasterImage", function(x, ...) standardGeneric("toSpatRasterImage"))
+
+#' @export
+setGeneric("isFull", function(x) standardGeneric("isFull"))
