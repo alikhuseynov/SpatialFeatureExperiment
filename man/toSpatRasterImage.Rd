@@ -2,21 +2,32 @@
 % Please edit documentation in R/image.R
 \name{toSpatRasterImage}
 \alias{toSpatRasterImage}
+\alias{toSpatRasterImage,EBImage-method}
 \alias{toSpatRasterImage,BioFormatsImage-method}
 \title{Convert images to SpatRasterImage}
 \usage{
-\S4method{toSpatRasterImage}{EBImage}(x, file_out = "img.tiff", overwrite = FALSE)
+\S4method{toSpatRasterImage}{EBImage}(
+  x,
+  save_geotiff = TRUE,
+  file_out = "img.tiff",
+  overwrite = FALSE
+)
 
-\S4method{toSpatRasterImage}{BioFormatsImage}(x, resolution = 4L, overwrite = FALSE)
+\S4method{toSpatRasterImage}{BioFormatsImage}(x, save_geotiff = TRUE, resolution = 4L, overwrite = FALSE)
 }
 \arguments{
 \item{x}{Either a \code{BioFormatsImage} or \code{EBIImage} object.}
+
+\item{save_geotiff}{Logical, whether to save the image to GeoTIFF file.}
+
+\item{file_out}{File to save the non-OME TIFF file for \code{SpatRaster}.}
 
 \item{overwrite}{Logical, whether to overwrite existing file of the same
 name.}
 
 \item{resolution}{Integer, which resolution in the \code{BioFormatsImage} to
-read and convert. Defaults to 4, which is a lower resolution.}
+read and convert. Defaults to 4, which is a lower resolution. Ignored if only
+1 resolution is present.}
 }
 \value{
 A \code{SpatRasterImage} object

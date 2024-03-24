@@ -73,18 +73,21 @@
     if (multi) {
         df <- .df2sf_check(df, spatialCoordsNames, "MULTIPOINT",
                            group_col = group_col)
+        if (!is.data.table(df)) ..group_col <- group_col
+        df <- df[order(df[,..group_col]),]
         out <- sf_multipoint(df, x = spatialCoordsNames[1],
                              y = spatialCoordsNames[2],
                              z = .use_z(spatialCoordsNames),
                              multipoint_id = group_col,
                              keep = TRUE)
+        rownames(out) <- out[[group_col]]
     } else {
         rns <- rownames(df)
         out <- sf::st_as_sf(df, coords = spatialCoordsNames, crs = NA,
                             row.names = rns) # in this case faster than sf_point
     }
     if (!is.na(spotDiameter)) {
-        out$geometry <- st_buffer(out$geometry, spotDiameter / 2)
+        st_geometry(out) <- st_buffer(st_geometry(out), spotDiameter / 2)
     }
     out
 }
@@ -103,6 +106,7 @@
                                multipolygon_id = group_col,
                                linestring_id = .use_subid(df, subid_col),
                                keep = TRUE)
+        rownames(out) <- out[[group_col]]
     } else {
         out <- sf_polygon(df, x = spatialCoordsNames[1],
                           y = spatialCoordsNames[2],
@@ -110,6 +114,7 @@
                           polygon_id = id_col,
                           linestring_id = .use_subid(df, subid_col),
                           keep = TRUE)
+        rownames(out) <- out[[id_col]]
     }
     return(out)
 }
@@ -127,12 +132,14 @@
                                   multilinestring_id = group_col,
                                   linestring_id = id_col,
                                   keep = TRUE)
+        rownames(out) <- out[[group_col]]
     } else {
         out <- sf_linestring(df, x = spatialCoordsNames[1],
                              y = spatialCoordsNames[2],
                              z = .use_z(spatialCoordsNames),
                              linestring_id = id_col,
                              keep = TRUE)
+        rownames(out) <- out[[id_col]]
     }
     return(out)
 }
@@ -208,10 +215,10 @@ df2sf <- function(df, spatialCoordsNames = c("x", "y"), spotDiameter = NA,
                       "POINT", "LINESTRING", "POLYGON",
                       "MULTIPOINT", "MULTILINESTRING",
                       "MULTIPOLYGON"
-                  ), BPPARAM = deprecated(),
+                  ),
                   group_col = "group",
                   id_col = "ID",
-                  subid_col = "subID") {
+                  subid_col = "subID", BPPARAM = deprecated()) {
     if (is_present(BPPARAM)) {
         deprecate_warn("1.6.0", "df2sf(BPPARAM = )",
                        details = "The sfheaders package is now used instead for much better performance")
@@ -282,7 +289,7 @@ df2sf <- function(df, spatialCoordsNames = c("x", "y"), spotDiameter = NA,
         MoreArgs = list(
             spatialCoordsNames = spatialCoordsNames,
             spotDiameter = spotDiameter,
-            group_col, id_col, subid_col
+            group_col = group_col, id_col = id_col, subid_col = subid_col
         ),
         SIMPLIFY = FALSE
     )

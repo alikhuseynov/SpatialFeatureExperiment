@@ -1,3 +1,9 @@
+.is0 <- function(x) {
+    if (length(x)) {
+        if (is.logical(x)) !any(x) else FALSE
+    } else TRUE
+}
+
 #' Subsetting SpatialFeatureExperiment objects
 #'
 #' The method for SFE reconstructs the spatial graphs when the SFE object is
@@ -49,20 +55,28 @@ setMethod(
         suppressWarnings(x <- callNextMethod())
         sample_ids <- sampleIDs(x)
         # Subset annotGeometries based on sample_id
-        if (!is.null(annotGeometries(x))) {
+        if (length(annotGeometries(x))) {
             ag_sub <- annotGeometries(x)
             for (g in seq_along(ag_sub)) {
                 ag_ind <- ag_sub[[g]]
                 ag_ind <- ag_ind[ag_ind$sample_id %in% sample_ids, ]
-                if (nrow(ag_ind) == 0L) ag_ind <- NULL
                 ag_sub[[g]] <- ag_ind
             }
             annotGeometries(x) <- ag_sub
         }
+        # Remove rowGeometries when an entire sample got removed
+        if (!is.null(rowGeometryNames(x))) {
+            samples_rm <- setdiff(sample_ids0, sample_ids)
+            if (length(samples_rm)) {
+                rowGeometries(x, sample_id = samples_rm) <- NULL
+            }
+        }
         # Crop images with new bbox
-        x <- .crop_imgs(x, bbox(x, sample_id = "all"))
+        if (!missing(j)) {
+            x <- .crop_imgs(x, bbox(x, sample_id = "all"))
+        }
         # Subset *Graphs based on sample_id and reconstruct row and colGraphs
-        if (!is.null(spatialGraphs(x))) {
+        if (!is.null(spatialGraphs(x)) && (!missing(j) && !.is0(j))) {
             graphs_sub <- int_metadata(x)$spatialGraphs
             graphs_sub <- graphs_sub[, names(graphs_sub) %in% sampleIDs(x),
                 drop = FALSE
@@ -140,6 +154,7 @@ setMethod(
                 spatialGraphs(x, MARGIN = 2) <- NULL
             }
         }
+        if (!missing(j) && .is0(j)) spatialGraphs(x) <- NULL
         validObject(x)
         return(x)
     }

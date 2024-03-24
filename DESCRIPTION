@@ -1,7 +1,7 @@
 Package: SpatialFeatureExperiment
 Type: Package
 Title: Integrating SpatialExperiment with Simple Features in sf
-Version: 1.5.1
+Version: 1.5.2
 Authors@R: 
     c(person("Lambda", "Moses", email = "dlu2@caltech.edu", 
     role = c("aut", "cre"),
@@ -29,7 +29,6 @@ Imports:
     lifecycle,
     Matrix,
     methods,
-    RBioFormats,
     rjson,
     rlang,
     S4Vectors,
@@ -44,7 +43,7 @@ Imports:
     utils
 License: Artistic-2.0
 Encoding: UTF-8
-RoxygenNote: 7.3.0
+RoxygenNote: 7.3.1
 Collate: 
     'AllGenerics.R'
     'utils.R'
@@ -72,6 +71,7 @@ Suggests:
     arrow,
     BiocStyle,
     knitr,
+    RBioFormats,
     rhdf5,
     rmarkdown,
     sfarrow,

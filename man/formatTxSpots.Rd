@@ -16,7 +16,8 @@ formatTxSpots(
   min_phred = 20,
   split_col = NULL,
   not_in_cell_id = c("-1", "UNASSIGNED"),
-  z_option = c("split", "3d"),
+  z_option = c("3d", "split"),
+  flip = FALSE,
   file_out = NULL,
   BPPARAM = SerialParam(),
   return = TRUE
@@ -25,14 +26,15 @@ formatTxSpots(
 addTxSpots(
   sfe,
   file,
-  sample_id = NULL,
+  sample_id = 1L,
   spatialCoordsNames = c("global_x", "global_y", "global_z"),
   gene_col = "gene",
   z = 3L,
   phred_col = "qv",
   min_phred = 20,
   split_col = NULL,
-  z_option = c("split", "3d"),
+  z_option = c("3d", "split"),
+  flip = FALSE,
   file_out = NULL,
   BPPARAM = SerialParam()
 )
@@ -82,14 +84,16 @@ there're multiple columns for `cell_col`, the first column is used to
 identify spots that are not in cells.}
 
 \item{z_option}{What to do with z coordinates. "3d" is to construct 3D
-geometries. However, note that GEOS underpinning \code{sf} does not support
-3D geometric operations. "split" is to create a separate 2D geometry for
-each z-plane so geometric operations are fully supported but some data
-wrangling is required to perform 3D analyses, and this is preferred when z
-coordinates have arbitrary units different from those of x and y. When the
-z coordinates are not integers, 3D geometries will always be constructed
-since there are no z-planes to speak of. This argument does not apply when
-`spatialCoordsNames` has length 2.}
+geometries. "split" is to create a separate 2D geometry for each z-plane so
+geometric operations are fully supported but some data wrangling is
+required to perform 3D analyses. When the z coordinates are not integers,
+3D geometries will always be constructed since there are no z-planes to
+speak of. This argument does not apply when `spatialCoordsNames` has length
+2.}
+
+\item{flip}{Logical, whether to flip the geometry to match image. Here the y
+coordinates are simply set to -y, so the original bounding box is not
+preserved. This is consistent with \code{readVizgen} and \code{readXenium}.}
 
 \item{file_out}{Name of file to save the geometry or raster to disk.
 Especially when the geometries are so large that it's unwieldy to load
@@ -107,6 +111,9 @@ not depend on whether the geometries are written to file. Always `FALSE`
 when `dest = "colGeometry"`.}
 
 \item{sfe}{A `SpatialFeatureExperiment` object.}
+
+\item{sample_id}{Which sample in the SFE object the transcript spots should
+be added to.}
 }
 \value{
 A sf data frame for vector geometries if `file_out` is not set.

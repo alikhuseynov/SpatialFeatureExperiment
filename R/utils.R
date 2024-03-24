@@ -48,7 +48,7 @@ changeSampleIDs <- function(sfe, replacement) {
         # I won't change the spatial results since those depend on the sample definitions
         if (length(rowGeometries(sfe))) {
             nms <- rowGeometryNames(sfe)
-            nms <- str_replace(nms, paste0(names(replacement)[i], "$"), replacement[i])
+            nms <- gsub(paste0(names(replacement)[i], "$"), replacement[i], nms)
             rowGeometryNames(sfe) <- nms
             # Edge case: what if one sample_id includes another one?
             # e.g. sample01_x and x
@@ -57,22 +57,22 @@ changeSampleIDs <- function(sfe, replacement) {
             imgData(sfe)$sample_id[imgData(sfe)$sample_id == names(replacement)[i]] <-
                 replacement[i]
         }
-        # TODO: change sample_ids with a list whose names are new sample_ids and values
-        # are vectors of cell IDs for each new sample. This is used when using
-        # geometry to split samples, say multiple pieces within the same Visium capture area.
-        # Need to generalize to that tree.
     }
     sfe
 }
 
-.translate_value <- function(x, translate, value) {
+.translate_value <- function(x, translate, value, sample_id = NULL) {
     if (translate && !is.null(int_metadata(x)$orig_bbox)) {
-        if (anyNA(value$sample_id) && nrow(value) == ncol(x))
-            value$sample_id <- colData(x)$sample_id
+        if (anyNA(value$sample_id) || is.null(value$sample_id)) {
+            if (nrow(value) == ncol(x))
+                value$sample_id <- colData(x)$sample_id
+            else if (nrow(value) == nrow(x))
+                value$sample_id <- .check_sample_id(x, sample_id)
+        }
         orig_bbox <- int_metadata(x)$orig_bbox
         # Don't translate if already translated
         curr_bbox <- st_bbox(value)
-        samples <- unique(value$sample_id)
+        samples <- unique(value$sample_id) %||% sample_id
         if (length(samples) > 1L) {
             value$ID_ <- seq_len(nrow(value)) # Unlikely name
             df <- value[,c("ID_", "sample_id", "geometry")]
@@ -110,7 +110,7 @@ changeSampleIDs <- function(sfe, replacement) {
 #' @examples
 #' library(SFEData)
 #' sfe <- McKellarMuscleData(dataset = "small")
-#' sfe |> callMeta() |> str
+#' sfe |> callMeta() |> str()
 callMeta <- function(object = NULL) {
     return(colData(object) |>
          methods::slot(name = "listData") |>
@@ -136,6 +136,3 @@ bbox_center <- function(bbox) {
     c(mean(bbox[c("xmin", "xmax")]),
       mean(bbox[c("ymin", "ymax")]))
 }
-
-# TODO: Use geometry to decide which cells should have sample_id changed
-# This will also split the rowGeometries.
