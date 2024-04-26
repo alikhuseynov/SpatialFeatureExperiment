@@ -27,7 +27,6 @@
 }
 
 .transpose <- function(bbox) {
-    # Should use bbox of the geometry rather than overall bbox of the sample
     M <- matrix(c(0,-1,-1,0), ncol = 2)
     v <- c(((bbox["ymax"] - bbox["ymin"])/2 + bbox["ymin"])*2,
            ((bbox["xmax"] - bbox["xmin"])/2 + bbox["xmin"])*2)
@@ -75,8 +74,6 @@
     mult_3d <- rbind(mult, 0) |> cbind(c(0,0,1))
     # It's fine to put it here since I don't expect more than a handful of geometries
     if (is.null(st_z_range(g))) {
-        # TODO: The * is slow, from mapply
-        # Consider getting the coordinates, do matrix multiplication, then use sfheaders
         g$geometry <- g$geometry * mult + add
     } else {
         # Somehow it drops Z when add is a 2x1 matrix but not when it's a vector
@@ -176,7 +173,7 @@
     v <- center_new - t(M) %*% center_old
     out <- EBImage::affine(imgRaster(img), rbind(M, t(v)),
                            output.dim = dim_new_px)
-    EBImage(img = out, ext = bbox_new)
+    ExtImage(img = out, ext = bbox_new)
 }
 
 .transform <- function(sfe, sample_id, bbox, geometry_fun, img_fun,

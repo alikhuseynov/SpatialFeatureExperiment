@@ -247,7 +247,7 @@ setGeneric("cropImg", function(x, bbox, ...) standardGeneric("cropImg"))
 if (!isGeneric("saveRDS")) {setGeneric("saveRDS", function (object, file="", ascii=FALSE, version=NULL, compress=TRUE, refhook=NULL) standardGeneric("saveRDS"))}
 
 #' @export
-setGeneric("toEBImage", function(x, ...) standardGeneric("toEBImage"))
+setGeneric("toExtImage", function(x, ...) standardGeneric("toExtImage"))
 
 #' @export
 setGeneric("toSpatRasterImage", function(x, ...) standardGeneric("toSpatRasterImage"))
@@ -264,3 +264,5 @@ setGeneric("origin<-", function(x, value) standardGeneric("origin<-"))
 setGeneric("transformation", function(x) standardGeneric("transformation"))
 
 setGeneric("transformation<-", function(x, value) standardGeneric("transformation<-"))
+
+if (!isGeneric("unwrap")) {setGeneric("unwrap", function(x, ...) standardGeneric("unwrap"))}

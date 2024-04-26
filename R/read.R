@@ -73,7 +73,9 @@ read10xVisiumSFE <- function(samples = "",
         lowres="tissue_lowres_image.png",
         hires="tissue_hires_image.png")
     img_fns <- img_fns[images]
+    
     # Read one sample at a time, in order to get spot diameter one sample at a time
+    # TODO: need support for VisiumHD ----
     sfes <- lapply(seq_along(samples), function(i) {
         o <- read10xVisium(dirs[i], sample_id[i], type, data, images, load = FALSE)
         imgData(o) <- NULL
@@ -293,11 +295,22 @@ read10xVisiumSFE <- function(samples = "",
 # sanity on geometries to remove any self-intersection
 #' @importFrom sf st_buffer st_is_valid
 .check_st_valid <- function(sf_df = NULL) {
-    invalid_inds <- lapply(st_geometry(sf_df), function(x) which(!st_is_valid(x)))
-    for (i in seq_along(sf_df)) {
-        if (!length(invalid_inds[[i]])) next
-        geoms <- st_geometry(sf_df[[i]])[invalid_inds[[i]]]
-        st_geometry(sf_df[[i]])[invalid_inds[[i]]] <- st_buffer(geoms, dist = 0)
+    # sf_df is a single sf data frame, not a list of sf data frames
+    invalid_inds <- which(!st_is_valid(sf_df))
+    if (length(invalid_inds)) {
+        geoms_new <- st_buffer(st_geometry(sf_df)[invalid_inds], dist = 0)
+        # [.sfc<- is slow for st_GEOMETRY when buffer created MULTIPOLYGONs
+        # due to a vapply somewhere to recompute bbox in an R loop
+        new_type <- st_geometry_type(geoms_new, by_geometry = FALSE)
+        if (new_type == "GEOMETRY") {
+            geoms_new <- st_cast(geoms_new)
+            new_type <- st_geometry_type(geoms_new, by_geometry = FALSE)
+        }
+        old_type <- st_geometry_type(sf_df, by_geometry = FALSE)
+        if (new_type != old_type && new_type != "GEOMETRY") {
+            sf_df <- st_cast(sf_df, as.character(new_type))
+        }
+        st_geometry(sf_df)[invalid_inds] <- geoms_new
     }
     return(sf_df)
 }
@@ -338,7 +351,7 @@ read10xVisiumSFE <- function(samples = "",
 #'   any combination of them.
 #' @param min_area Minimum cell area in square microns. Anything smaller will be
 #'   considered artifact or debris and removed.
-#' @param filter_counts Keep cells with counts \code{> 0}.
+#' @param filter_counts Logical, whether to keep cells with counts \code{> 0}.
 #' @param add_molecules Logical, whether to add transcripts coordinates to an
 #'   object.
 #' @param use_bboxes If no segmentation output is present, use
@@ -382,6 +395,7 @@ read10xVisiumSFE <- function(samples = "",
 #' @importFrom rlang check_installed
 #' @importFrom SpatialExperiment imgData<-
 #' @importFrom data.table fread merge.data.table rbindlist is.data.table
+#' @importFrom stats na.omit
 #' @examples
 #' dir_use <- system.file("extdata/vizgen_cellbound", package = "SpatialFeatureExperiment")
 #' sfe <- readVizgen(dir_use, z = 3L, image = "PolyT",
@@ -402,7 +416,9 @@ readVizgen <- function(data_dir,
                        use_bboxes = FALSE,
                        use_cellpose = TRUE,
                        BPPARAM = SerialParam(),
-                       file_out = file.path(data_dir, "detected_transcripts.parquet"), ...) {
+                       file_out = file.path(data_dir, "detected_transcripts.parquet"),
+                       ...) {
+    check_installed("sfarrow")
     data_dir <- normalizePath(data_dir, mustWork = TRUE)
     flip <- match.arg(flip)
     image <- match.arg(image, several.ok = TRUE)
@@ -473,7 +489,7 @@ readVizgen <- function(data_dir,
                     paste0("\n", parq))
             parq <- parq_clean
             if (any(grepl("cell_boundaries.parquet", parq))) {
-                # use default segmentaion file
+                # use default segmentation file
                 parq <- grep("cell_boundaries.parquet", parq, value = TRUE)
             } else if (any(grepl("hdf5s_micron", parq))) {
                 # use previously processed/saved `hdf5` files
@@ -490,7 +506,7 @@ readVizgen <- function(data_dir,
                         paste0("\n", ">>> processed hdf5 files will be used") })
             fn <- parq
             # read file and filter to keep selected single z section as they're the same anyway
-            polys <- st_read(fn, int64_as_string = TRUE, crs = NA, quiet = TRUE)
+            polys <- sfarrow::st_read_parquet(fn)
             # Can use any z-plane since they're all the same
             # This way so this part still works when the parquet file is written after
             # reading in HDF5 the first time. Only writing one z-plane to save disk space.
@@ -525,7 +541,7 @@ readVizgen <- function(data_dir,
             polys$Type <- "cell"
             parq_file <- file.path(data_dir, "hdf5s_micron_space.parquet")
             if (!file.exists(parq_file)) {
-                st_write(polys, dsn = parq_file, driver = "Parquet")
+                sfarrow::st_write_parquet(polys, dsn = parq_file)
             }
         } else if (length(fns) == 0) {
             warning("No '.hdf5' files present, check input directory -> `data_dir`")
@@ -559,7 +575,7 @@ readVizgen <- function(data_dir,
     if (!is.null(polys)) {
         # remove NAs when matching
         metadata <-
-            metadata[match(polys$ID, metadata[[1]]) |> stats::na.omit(),]
+            metadata[match(polys$ID, metadata[[1]]) |> na.omit(),]
     }
     rownames(metadata) <- metadata[[1]]
     metadata[,1] <- NULL
@@ -588,7 +604,7 @@ readVizgen <- function(data_dir,
     if (!is.null(polys) &&
         !identical(polys$ID, rns)) {
         # filter geometries
-        matched.cells <- match(rns, polys$ID) |> stats::na.omit()
+        matched.cells <- match(rns, polys$ID) |> na.omit()
         message(">>> filtering geometries to match ", length(matched.cells),
                 " cells with counts > 0")
         polys <- polys[matched.cells, , drop = FALSE]
@@ -620,7 +636,7 @@ readVizgen <- function(data_dir,
     # NOTE: might take some time to run
     if (use_bboxes && is.null(polys)) {
         message(">>> Creating bounding boxes from `cell_metadata`")
-        # TODO: rewrite to use the now much faster df2sf
+        # TODO: rewrite to use the now much faster df2sf ----
         bboxes_sfc <-
             bplapply(seq_len(nrow(metadata)),
                      function(i) {
@@ -723,6 +739,11 @@ readVizgen <- function(data_dir,
 
 .read_tx_output <- function(file_out, z, z_option, gene_col, return,
                             gene_select = NULL) {
+    if (!is.null(gene_select) && !"Parquet" %in% rownames(sf::st_drivers())) {
+        check_installed("sfarrow")
+        warning("GDAL Parquet driver is required to selectively read genes. Reading all genes.")
+        gene_select <- NULL
+    }
     file_out <- normalizePath(file_out, mustWork = FALSE)
     file_dir <- file_path_sans_ext(file_out)
     # File or dir already exists, skip processing
@@ -742,9 +763,13 @@ readVizgen <- function(data_dir,
         if (length(fns)) {
             if (!return) return(file_dir)
             out <- lapply(fns, function(x) {
-                q <- .make_sql_query(x, gene_select, gene_col)
-                out <- st_read(x, query = q, int64_as_string = TRUE, quiet = TRUE,
-                               crs = NA)
+                if (is.null(gene_select))
+                    out <- sfarrow::st_read_parquet(x)
+                else {
+                    q <- .make_sql_query(x, gene_select, gene_col)
+                    out <- st_read(x, query = q, int64_as_string = TRUE, quiet = TRUE,
+                                   crs = NA)
+                }
                 out
             })
             # add names to a list
@@ -760,8 +785,11 @@ readVizgen <- function(data_dir,
         # read transcripts from detected_transcripts.parquet
     } else if (file.exists(file_out) && !dir.exists(file_dir)) {
         if (!return) return(file_out)
-        out <- st_read(file_out, query = .make_sql_query(file_out, gene_select, gene_col),
-                       int64_as_string = TRUE, quiet = TRUE, crs = NA)
+        if (is.null(gene_select))
+            out <- sfarrow::st_read_parquet(x)
+        else
+            out <- st_read(file_out, query = .make_sql_query(file_out, gene_select, gene_col),
+                           int64_as_string = TRUE, quiet = TRUE, crs = NA)
         rownames(out) <- out[[gene_col]]
         return(out)
     }
@@ -1008,15 +1036,14 @@ formatTxSpots <- function(file, dest = c("rowGeometry", "colGeometry"),
         if (!dir.exists(dirname(file_out)))
             dir.create(dirname(file_out))
         if (is(mols, "sf")) {
-            st_write(mols, file_out, driver = "Parquet", quiet = TRUE)
+            sfarrow::st_write_parquet(mols, file_out)
             if (!return) return(file_out)
         } else {
             if (!dir.exists(file_dir)) dir.create(file_dir)
             suppressWarnings({
                 bplapply(names(mols), function(n) {
                     name_use <- gsub("/", ".", n)
-                    st_write(mols[[n]], file.path(file_dir, paste0(name_use, ".parquet")),
-                             driver = "Parquet")
+                    sfarrow::st_write_parquet(mols[[n]], file.path(file_dir, paste0(name_use, ".parquet")))
                 }, BPPARAM = SerialParam(progressbar = TRUE))
             })
             if (!return) return(file_dir)
@@ -1067,7 +1094,7 @@ addTxSpots <- function(sfe, file, sample_id = 1L, gene_select = NULL,
             gene_names <-
                 lapply(rowGeometries(sfe), function(i) {
                     gene_indx <-
-                        which(rownames(sfe) %in% stats::na.omit(i[[gene_col]]))
+                        which(rownames(sfe) %in% na.omit(i[[gene_col]]))
                     gene_name <- rownames(sfe[gene_indx,])
                     return(gene_name)
                 }) |> unlist() |> unique()
@@ -1088,7 +1115,7 @@ addTxSpots <- function(sfe, file, sample_id = 1L, gene_select = NULL,
             if (!all(rownames(sfe) %in% rowGeometry(sfe)[[gene_col]])) {
                 # match gene names from rowGeometry removing NAs
                 gene_indx <-
-                    which(rownames(sfe) %in% rowGeometry(sfe)[[gene_col]] |> stats::na.omit())
+                    which(rownames(sfe) %in% rowGeometry(sfe)[[gene_col]] |> na.omit())
                 genes_rm <- rownames(sfe)[-gene_indx]
                 message(">>> Total of ", length(genes_rm),
                         " features/genes with `min_phred` < ", min_phred, " are removed from SFE object",
@@ -1129,6 +1156,7 @@ readCosMX <- function(data_dir,
                       split_cell_comps = FALSE,
                       BPPARAM = SerialParam(),
                       file_out = file.path(data_dir, "tx_spots.parquet"), ...) {
+    check_installed("sfarrow")
     data_dir <- normalizePath(data_dir, mustWork = TRUE)
     fns <- list.files(data_dir, pattern = "\\.csv$", full.names = TRUE)
     fn_metadata <- grep("metadata", fns, value = TRUE)
@@ -1153,7 +1181,7 @@ readCosMX <- function(data_dir,
     poly_sf_fn <- file.path(data_dir, "cell_boundaries_sf.parquet")
     if (file.exists(poly_sf_fn)) {
         message(">>> File cell_boundaries_sf.parquet found")
-        polys <- st_read(poly_sf_fn, int64_as_string = TRUE, quiet = TRUE, crs = NA)
+        polys <- sfarrow::st_read_parquet(poly_sf_fn)
         rownames(polys) <- polys$cellID
     } else {
         message(">>> Constructing cell polygons")
@@ -1161,7 +1189,7 @@ readCosMX <- function(data_dir,
                        geometryType = "POLYGON",
                        id_col = "cellID")
         polys <- polys[match(meta$cell_ID, polys$cellID),]
-        st_write(polys, poly_sf_fn, driver = "Parquet")
+        sfarrow::st_write_parquet(polys, poly_sf_fn)
     }
 
     sfe <- SpatialFeatureExperiment(list(counts = mat), colData = meta,
@@ -1218,8 +1246,6 @@ readCosMX <- function(data_dir,
 #'   and Vimentin. So this argument is ignored for XOA v2.
 #' @param segmentations Which segmentation outputs to read, can be "cell",
 #'   "nucleus", or both.
-#' @param image_threshold Integer value, below which threshold is to set values
-#'   to `NA`, default is to `30L`, this removes some background artifacts.
 #' @param row.names String specifying whether to use Ensembl IDs ("id") or gene
 #'   symbols ("symbol") as row names. If using symbols, the Ensembl ID will be
 #'   appended to disambiguate in case the same symbol corresponds to multiple
@@ -1241,7 +1267,7 @@ readCosMX <- function(data_dir,
 #' time.
 #' @export
 #'
-#' @importFrom sf st_area st_geometry<- st_as_sf st_write
+#' @importFrom sf st_area st_geometry<- st_as_sf
 #' @importFrom terra rast ext vect
 #' @importFrom BiocParallel bpmapply bplapply
 #' @importFrom rlang check_installed
@@ -1259,16 +1285,9 @@ readCosMX <- function(data_dir,
 #'  sample_id = "test_xenium",
 #'  image = c("morphology_focus", "morphology_mip"),
 #'  segmentations = c("cell", "nucleus"),
-#'  read.image_args = # list of arguments to passed to RBioFormats::read.image
-#'  list("resolution" = 4L,
-#'  "filter.metadata" = TRUE,
-#'  "read.metadata" = FALSE,
-#'  "normalize" = FALSE),
-#'  image_threshold = 30,
 #'  flip = "geometry",
 #'  filter_counts = TRUE,
 #'  add_molecules = TRUE,
-#'  BPPARAM = BiocParallel::MulticoreParam(14, tasks = 80L, force.GC = FALSE, progressbar = TRUE),
 #'  file_out = NULL)
 #'
 readXenium <- function(data_dir,
@@ -1276,13 +1295,13 @@ readXenium <- function(data_dir,
                        image = c("morphology_focus", "morphology_mip"),
                        segmentations = c("cell", "nucleus"),
                        row.names = c("id", "symbol"),
-                       image_threshold = NULL,
                        flip = c("geometry", "image", "none"),
                        max_flip = "50 MB",
                        filter_counts = FALSE,
                        add_molecules = FALSE,
                        BPPARAM = SerialParam(),
                        file_out = file.path(data_dir, "tx_spots.parquet"), ...) {
+    check_installed("sfarrow")
     data_dir <- normalizePath(data_dir, mustWork = TRUE)
     flip <- match.arg(flip)
     image <- match.arg(image, several.ok = TRUE)
@@ -1291,8 +1310,9 @@ readXenium <- function(data_dir,
         message(">>> Must use gene symbols as row names when adding transcript spots.")
         row.names <- "symbol"
     }
-    xoa_version <- fromJSON(file = file.path(data_dir, "experiment.xenium"),
-                            simplify = TRUE)$analysis_sw_version
+    experiment <- fromJSON(file = file.path(data_dir, "experiment.xenium"),
+                           simplify = TRUE)
+    xoa_version <- experiment$analysis_sw_version
     major_version <- substr(xoa_version, 8, 8) |> as.integer()
     minor_version <- substr(xoa_version, 10, 10) |> as.integer()
 
@@ -1366,8 +1386,7 @@ readXenium <- function(data_dir,
                     ">>> Reading ", paste0(names(fn_segs), collapse = " and "),
                     " segmentations")
             # add cell id to rownames
-            polys <- lapply(fn_segs, st_read, quiet = TRUE, int64_as_string = TRUE,
-                            crs = NA)
+            polys <- lapply(fn_segs, sfarrow::st_read_parquet)
         } else {
             if (no_raw_bytes) {
                 if (any(grep("..parquet", fn_segs))) {
@@ -1409,7 +1428,8 @@ readXenium <- function(data_dir,
                     p
                 })
             }
-            if (major_version == 2L) {
+            instrument_version <- experiment$instrument_sw_version
+            if (major_version == 2L && instrument_version != "Development") {
                 if ("nucleus" %in% names(polys)) {
                     message(">>> Making MULTIPOLYGON nuclei geometries")
                     polys[["nucleus"]] <- df2sf(polys[["nucleus"]],
@@ -1432,6 +1452,9 @@ readXenium <- function(data_dir,
                         df2sf(x, c("vertex_x", "vertex_y"), id_col = "cell_id",
                               geometryType = "POLYGON") })
             }
+            message(">>> Checking polygon validity")
+            # sanity on geometries
+            polys <- lapply(polys, .check_st_valid)
 
             fn_out <- c(cell = "cell_boundaries_sf.parquet",
                         nucleus = "nucleus_boundaries_sf.parquet")
@@ -1439,7 +1462,7 @@ readXenium <- function(data_dir,
             fn_out <- file.path(data_dir, fn_out)
             message(">>> Saving geometries to parquet files")
             for (i in seq_along(polys)) {
-                st_write(polys[[i]], fn_out[[i]], driver = "Parquet", quiet = TRUE)
+                sfarrow::st_write_parquet(polys[[i]], fn_out[[i]])
             }
         }
         # add names to polys list
@@ -1494,7 +1517,7 @@ readXenium <- function(data_dir,
     if (any(names(metadata) == "transcript_counts") && filter_counts) {
         message(">>> ..filtering cell metadata - keep cells with `transcript_counts` > 0")
         metadata <- metadata[metadata$transcript_count > 0,]
-        sce <- sce[,match(metadata$cell_id, colnames(sce)) |> stats::na.omit()]
+        sce <- sce[,match(metadata$cell_id, colnames(sce)) |> na.omit()]
     } else {
         # if metadata isn't already filtered
         if (!"transcript_counts" %in% names(metadata) && filter_counts) {
@@ -1504,20 +1527,14 @@ readXenium <- function(data_dir,
         }}
     # filtering segmentations
     if (!is.null(polys)) {
-        if (is(polys, "list")) {
-            for (i in seq(polys)) {
-                # filter geometries
-                matched.cells <- match(colnames(sce), polys[[i]]$cell_id) |> stats::na.omit()
-                message(">>> filtering ", names(polys)[i],
-                        " geometries to match ",
-                        length(matched.cells), " cells with counts > 0")
-                polys[[i]] <- polys[[i]][matched.cells, , drop = FALSE] }
-        } else if (is(polys, "sf")) {
-            matched.cells <- match(colnames(sce), polys$cell_id) |> stats::na.omit()
-            message(">>> filtering ", if (!is.null(segmentations) || exists("segmentations")) segmentations,
-                    " geometries to match ", length(matched.cells), " cells with counts > 0")
-            polys <- polys[matched.cells, , drop = FALSE]
-        }
+        # polys should always be a list, even if it's length 1
+        for (i in seq(polys)) {
+            # filter geometries
+            matched.cells <- match(colnames(sce), polys[[i]]$cell_id) |> na.omit()
+            message(">>> filtering ", names(polys)[i],
+                    " geometries to match ",
+                    length(matched.cells), " cells with counts > 0")
+            polys[[i]] <- polys[[i]][matched.cells, , drop = FALSE] }
     }
     metadata <- as.data.frame(metadata) |> as("DataFrame")
     rownames(metadata) <- metadata$cell_id
@@ -1534,8 +1551,6 @@ readXenium <- function(data_dir,
 
     # add segmentation geometries
     if (!is.null(polys)) {
-        # sanity on geometries
-        polys <- lapply(polys, .check_st_valid)
         polys <-
             lapply(polys, function(i) {
                 rownames(i) <- i$cell_id
