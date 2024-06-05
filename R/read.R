@@ -461,24 +461,21 @@ read10xVisiumSFE <- function(samples = "",
 # sanity on geometries to remove any self-intersection
 #' @importFrom sf st_buffer st_is_valid
 .check_st_valid <- function(sf_df = NULL) {
-    # sf_df is a single sf data frame, not a list of sf data frames
-    invalid_inds <- which(!st_is_valid(sf_df))
-    if (length(invalid_inds)) {
-        geoms_new <- st_buffer(st_geometry(sf_df)[invalid_inds], dist = 0)
-        # [.sfc<- is slow for st_GEOMETRY when buffer created MULTIPOLYGONs
-        # due to a vapply somewhere to recompute bbox in an R loop
-        new_type <- st_geometry_type(geoms_new, by_geometry = FALSE)
-        if (new_type == "GEOMETRY") {
-            geoms_new <- st_cast(geoms_new)
-            new_type <- st_geometry_type(geoms_new, by_geometry = FALSE)
-        }
-        old_type <- st_geometry_type(sf_df, by_geometry = FALSE)
-        if (new_type != old_type && new_type != "GEOMETRY") {
-            sf_df <- st_cast(sf_df, as.character(new_type))
-        }
-        st_geometry(sf_df)[invalid_inds] <- geoms_new
+  if (!is(sf_df, "list")) { sf_df <- list(sf_df) }
+  test_st_valid <-
+    lapply(sf_df, function(i) {
+      i <- st_geometry(i) |> st_is_valid()
+      i <- any(x = !(i)) }) |> unlist()
+  if (any(test_st_valid)) {
+    seg <- which(test_st_valid)
+    for (i in seq(seg)) {
+      geoms <-
+        st_buffer(sf_df[[i]] |> st_geometry(), dist = 0)
+      st_geometry(sf_df[[i]] ) <- geoms
     }
-    return(sf_df)
+  }
+  if (length(sf_df) == 1) { sf_df <- sf_df[[1]] }
+  return(sf_df)
 }
 
 #' Read Vizgen MERFISH output as SpatialFeatureExperiment
