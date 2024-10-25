@@ -1,3 +1,5 @@
+library(spdep)
+set.SubgraphOption(FALSE) # I don't care in this case
 # Unit test spdep and Visium graph wrappers
 sfe2 <- readRDS(system.file("extdata/sfe_multi_sample.rds",
     package = "SpatialFeatureExperiment"
@@ -152,4 +154,12 @@ test_that("Correct Visium graph", {
     attrs_reconst <- attr(g, "method")
     expect_equal(attrs_reconst$FUN, "findVisiumGraph")
     expect_equal(attrs_reconst$args$style, "W")
+})
+
+test_that("Correct Visium HD graph", {
+    testthat::skip()
+    dir <- "~/WoundAnalysis/Visium-HD data/YVW01_binned_outputs/"
+    sfe <- readVisiumHD(dir, bin_size = 16)
+    g <- findVisiumHDGraph(sfe)
+    expect_s3_class(g, "listw")
 })
